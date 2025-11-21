@@ -1,126 +1,105 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs").promises;
+const fs = require("fs");
 const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const DATA_FILE = path.join(__dirname, "data", "readings.json");
+// 🔹 Allow JSON
+app.use(express.json());
 
-// CORS: allow your GitHub Pages origin + localhost for testing
+// 🔹 CORS – update this:
 const allowedOrigins = [
-  "http://localhost:5500", // or whatever you use locally for the HTML
+  "http://localhost:5500",                               // VS Code Live Server or similar
   "http://127.0.0.1:5500",
-  "https://YOUR_GITHUB_USERNAME.github.io" // <-- change to your user site domain
+  "https://jeevrasayan.github.io",                       // GitHub Pages root
+  "https://jeevrasayan.github.io/your-frontend-repo",    // optional: specific project path
 ];
 
 app.use(
   cors({
-    origin: function (origin, cb) {
-      if (!origin) return cb(null, true); // allow curl / Postman
-      if (allowedOrigins.some((o) => origin.startsWith(o))) {
-        return cb(null, true);
-      }
-      return cb(null, false);
-    }
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS: " + origin));
+    },
   })
 );
 
-app.use(express.json());
+// 🔹 Data file path
+const DATA_FILE = path.join(__dirname, "data", "readings.json");
 
-// Ensure data file exists
-async function ensureDataFile() {
+function readData() {
   try {
-    await fs.access(DATA_FILE);
-  } catch {
-    await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-    await fs.writeFile(DATA_FILE, "[]", "utf8");
-  }
-}
-
-async function readAllReadings() {
-  await ensureDataFile();
-  const raw = await fs.readFile(DATA_FILE, "utf8");
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
+    const raw = fs.readFileSync(DATA_FILE, "utf8");
+    const data = JSON.parse(raw || "[]");
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error("Failed to read data file:", err);
     return [];
   }
 }
 
-async function writeAllReadings(readings) {
-  await ensureDataFile();
-  await fs.writeFile(DATA_FILE, JSON.stringify(readings, null, 2), "utf8");
+function writeData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
 }
 
-// POST /api/readings → add one
-app.post("/api/readings", async (req, res) => {
-  try {
-    const {
-      date,
-      time,
-      systolic,
-      diastolic,
-      heartRate,
-      totalChol,
-      hdl,
-      ldl,
-      trig,
-      creatinine
-    } = req.body || {};
+// ---- API ROUTES ----
 
-    if (!date || systolic == null || diastolic == null) {
-      return res.status(400).json({
-        error: "date, systolic, and diastolic are required"
-      });
-    }
-
-    const newEntry = {
-      id: Date.now(),
-      date,
-      time: time || "",
-      systolic: systolic != null ? Number(systolic) : null,
-      diastolic: diastolic != null ? Number(diastolic) : null,
-      heartRate: heartRate != null ? Number(heartRate) : null,
-      totalChol: totalChol != null ? Number(totalChol) : null,
-      hdl: hdl != null ? Number(hdl) : null,
-      ldl: ldl != null ? Number(ldl) : null,
-      trig: trig != null ? Number(trig) : null,
-      creatinine: creatinine != null ? Number(creatinine) : null
-    };
-
-    const readings = await readAllReadings();
-    readings.push(newEntry);
-    // sort by date+time
-    readings.sort((a, b) => {
-      const kA = `${a.date || ""} ${a.time || ""}`;
-      const kB = `${b.date || ""} ${b.time || ""}`;
-      return kA.localeCompare(kB);
-    });
-    await writeAllReadings(readings);
-
-    res.status(201).json({ ok: true, entry: newEntry });
-  } catch (err) {
-    console.error("Error in POST /api/readings", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// GET /api/readings → list all
-app.get("/api/readings", async (req, res) => {
-  try {
-    const readings = await readAllReadings();
-    res.json(readings);
-  } catch (err) {
-    console.error("Error in GET /api/readings", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
+// Health check
 app.get("/", (req, res) => {
-  res.send("Health Tracker API is running.");
+  res.type("text/plain").send("Health Tracker API is running.");
+});
+
+// Get all readings
+app.get("/api/readings", (req, res) => {
+  const entries = readData();
+  res.json(entries);
+});
+
+// Add a reading
+app.post("/api/readings", (req, res) => {
+  const body = req.body || {};
+
+  if (!body.date || !body.systolic || !body.diastolic) {
+    return res.status(400).json({ error: "date, systolic, diastolic are required" });
+  }
+
+  const entries = readData();
+
+  const newEntry = {
+    id: body.id ?? Date.now(),
+    date: body.date,
+    time: body.time || "",
+    systolic: body.systolic,
+    diastolic: body.diastolic,
+    heartRate: body.heartRate ?? null,
+    totalChol: body.totalChol ?? null,
+    hdl: body.hdl ?? null,
+    ldl: body.ldl ?? null,
+    trig: body.trig ?? null,
+  };
+
+  entries.push(newEntry);
+  writeData(entries);
+
+  res.status(201).json(newEntry);
+});
+
+// Delete a reading
+app.delete("/api/readings/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const entries = readData();
+  const idx = entries.findIndex((e) => e.id === id);
+
+  if (idx === -1) {
+    return res.status(404).json({ error: "Entry not found" });
+  }
+
+  const removed = entries.splice(idx, 1)[0];
+  writeData(entries);
+
+  res.json({ deleted: removed.id });
 });
 
 app.listen(PORT, () => {
