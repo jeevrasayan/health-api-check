@@ -1,0 +1,28 @@
+[
+  {
+    "id": 1763719496845,
+    "date": "2025-11-21",
+    "time": "",
+    "systolic": 120,
+    "diastolic": 80,
+    "heartRate": null,
+    "totalChol": null,
+    "hdl": null,
+    "ldl": null,
+    "trig": null,
+    "creatinine": null
+  },
+  {
+    "id": 1763719603535,
+    "date": "2025-11-21",
+    "time": "",
+    "systolic": 120,
+    "diastolic": 80,
+    "heartRate": 72,
+    "totalChol": 50,
+    "hdl": 20,
+    "ldl": 100,
+    "trig": 60,
+    "creatinine": 30
+  }
+]
