@@ -6,25 +6,34 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 🔹 Allow JSON
+// 🔹 Body parser
 app.use(express.json());
 
-// 🔹 CORS – update this:
+// 🔹 Allowed origins (GitHub Pages + local dev)
 const allowedOrigins = [
-  "http://localhost:5500",                               // VS Code Live Server or similar
+  "http://localhost:5500",
   "http://127.0.0.1:5500",
-  "https://jeevrasayan.github.io",                       // GitHub Pages root
-  "https://jeevrasayan.github.io/your-frontend-repo",    // optional: specific project path
+  "https://jeevrasayan.github.io", // covers ALL your GitHub Pages projects
 ];
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-      return cb(new Error("Not allowed by CORS: " + origin));
-    },
-  })
-);
+// 🔹 CORS options (explicitly allow POST + OPTIONS)
+const corsOptions = {
+  origin(origin, cb) {
+    // Allow curl/Postman/no-origin requests
+    if (!origin || allowedOrigins.includes(origin)) {
+      return cb(null, true);
+    }
+    console.log("Blocked by CORS:", origin);
+    return cb(new Error("Not allowed by CORS: " + origin));
+  },
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+};
+
+// Apply CORS to all routes
+app.use(cors(corsOptions));
+// Explicit preflight handler so OPTIONS never returns 405
+app.options("*", cors(corsOptions));
 
 // 🔹 Data file path
 const DATA_FILE = path.join(__dirname, "data", "readings.json");
@@ -62,7 +71,9 @@ app.post("/api/readings", (req, res) => {
   const body = req.body || {};
 
   if (!body.date || !body.systolic || !body.diastolic) {
-    return res.status(400).json({ error: "date, systolic, diastolic are required" });
+    return res
+      .status(400)
+      .json({ error: "date, systolic, diastolic are required" });
   }
 
   const entries = readData();
